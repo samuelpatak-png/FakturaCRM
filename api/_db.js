@@ -28,6 +28,14 @@ async function ensureSchema() {
       data JSONB NOT NULL
     )
   `;
+  // Postupné rozšírenia schémy (bezpečné aj na existujúcej tabuľke s dátami).
+  await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payments JSONB DEFAULT '[]'::jsonb`;
+  await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS doc_type TEXT DEFAULT 'invoice'`;
+  await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS related_invoice_id TEXT`;
+  await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS related_invoice_number TEXT`;
+  await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS converted_to_invoice_id TEXT`;
+  await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS converted_to_invoice_number TEXT`;
+  await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS valid_until TEXT`;
   schemaReady = true;
 }
 
@@ -45,6 +53,13 @@ function rowToInvoice(row) {
     note: row.note,
     paidAt: row.paid_at,
     createdAt: row.created_at,
+    payments: row.payments || [],
+    docType: row.doc_type || 'invoice',
+    relatedInvoiceId: row.related_invoice_id,
+    relatedInvoiceNumber: row.related_invoice_number,
+    convertedToInvoiceId: row.converted_to_invoice_id,
+    convertedToInvoiceNumber: row.converted_to_invoice_number,
+    validUntil: row.valid_until,
   };
 }
 

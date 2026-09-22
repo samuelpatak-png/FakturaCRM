@@ -28,6 +28,10 @@
   --color-critical-bg: #fee2e2;
   --color-critical-text: #b91c1c;
 
+  --color-info: #2563eb;
+  --color-info-bg: #dbeafe;
+  --color-info-text: #1d4ed8;
+
   --color-chart-1: #2a78d6;
   --color-chart-1-dark: #3987e5;
 
@@ -75,6 +79,10 @@
     --color-critical-bg: #3a1414;
     --color-critical-text: #f87171;
 
+    --color-info: #5b9bf5;
+    --color-info-bg: #16233d;
+    --color-info-text: #93c0fb;
+
     --color-chart-1: #3987e5;
 
     --color-ring: #5ba0f0;
@@ -111,6 +119,10 @@
   --color-critical: #e66767;
   --color-critical-bg: #3a1414;
   --color-critical-text: #f87171;
+
+  --color-info: #5b9bf5;
+  --color-info-bg: #16233d;
+  --color-info-text: #93c0fb;
 
   --color-chart-1: #3987e5;
 
@@ -322,6 +334,7 @@ svg { display: block; }
 .stat-icon.good { background: var(--color-good-bg); color: var(--color-good-text); }
 .stat-icon.warning { background: var(--color-warning-bg); color: var(--color-warning-text); }
 .stat-icon.critical { background: var(--color-critical-bg); color: var(--color-critical-text); }
+.stat-icon.info { background: var(--color-info-bg); color: var(--color-info-text); }
 .stat-value {
   font-family: var(--font-heading); font-weight: 700; font-size: 26px;
   font-variant-numeric: tabular-nums;
@@ -351,6 +364,7 @@ svg { display: block; }
 .badge-good { background: var(--color-good-bg); color: var(--color-good-text); }
 .badge-warning { background: var(--color-warning-bg); color: var(--color-warning-text); }
 .badge-critical { background: var(--color-critical-bg); color: var(--color-critical-text); }
+.badge-info { background: var(--color-info-bg); color: var(--color-info-text); }
 .badge-neutral { background: var(--color-surface-alt); color: var(--color-fg-secondary); }
 
 /* ============ Tables ============ */
@@ -597,6 +611,9 @@ input.invalid, select.invalid { border-color: var(--color-critical); }
   display: flex; gap: 22px; flex-wrap: wrap; margin-top: 26px; padding-top: 16px;
   border-top: 1px solid var(--color-border); font-size: 13.5px; color: var(--color-fg-secondary);
 }
+.invoice-qr { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.invoice-qr img { display: block; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px; background: #fff; }
+.invoice-qr span { font-size: 12px; color: var(--color-fg-muted); font-weight: 600; }
 
 /* ============ Print (invoice) ============ */
 .print-sheet { display: none; }

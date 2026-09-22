@@ -27,12 +27,13 @@ Views.dashboard = function renderDashboard(root) {
     deltaHtml = `<span class="stat-meta">Minulý mesiac: ${formatCurrency(prevMonthSum)}</span>`;
   }
 
-  const outstandingCount = agg.unpaid.count + agg.overdue.count;
-  const outstandingSum = agg.unpaid.sum + agg.overdue.sum;
+  const outstandingCount = agg.unpaid.count + agg.overdue.count + agg.partial.count;
+  const outstandingSum = agg.unpaid.sum + agg.overdue.sum + agg.partial.sum;
 
   const hasCompanyName = !!settings.companyName;
 
   const recent = invoices
+    .filter((inv) => (inv.docType || 'invoice') === 'invoice')
     .slice()
     .sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || ''))
     .slice(0, 6);
@@ -158,6 +159,7 @@ Views.dashboard = function renderDashboard(root) {
   const donutCanvas = document.getElementById('statusDonut');
   const donutSegments = [
     { label: 'Zaplatené', value: agg.paid.sum, color: cssVar('--color-good') },
+    { label: 'Čiastočne', value: agg.partial.sum, color: cssVar('--color-info') },
     { label: 'Nezaplatené', value: agg.unpaid.sum, color: cssVar('--color-warning') },
     { label: 'Po splatnosti', value: agg.overdue.sum, color: cssVar('--color-critical') },
   ].filter((s) => s.value > 0);

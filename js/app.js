@@ -125,8 +125,10 @@ function render() {
       Views.invoices(root, { status: parts[1] });
       break;
     case 'invoice':
-      if (parts[1] === 'new') Views.invoiceForm(root, {});
-      else if (parts[1] === 'edit') Views.invoiceForm(root, { id: parts[2] });
+      if (parts[1] === 'new') {
+        const docType = parts[2] === 'quote' ? 'quote' : parts[2] === 'credit-note' ? 'credit_note' : 'invoice';
+        Views.invoiceForm(root, { docType, relatedInvoiceId: parts[3] });
+      } else if (parts[1] === 'edit') Views.invoiceForm(root, { id: parts[2] });
       else if (parts[1] === 'view') Views.invoiceView(root, { id: parts[2] });
       else Views.dashboard(root);
       break;

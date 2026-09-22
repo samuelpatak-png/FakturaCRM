@@ -191,8 +191,8 @@ Views.settings = function renderSettings(root) {
   });
 
   root.querySelector('#btnExportCsv').addEventListener('click', () => {
-    if (!Store.getInvoices().some((inv) => inv.paidAt)) {
-      App.toast('Zatiaľ nie sú žiadne zaplatené faktúry na export.', 'critical');
+    if (!Store.getInvoices().some((inv) => getAmountPaid(inv) > 0)) {
+      App.toast('Zatiaľ nie sú žiadne prijaté platby na export.', 'critical');
       return;
     }
     downloadFile(`fakturacrm-penazny-dennik-${todayISO()}.csv`, Store.exportPenaznyDennikCsv(), 'text/csv;charset=utf-8');

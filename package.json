@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "description": "Jednoduchá appka na vystavovanie faktúr a sledovanie príjmov.",
   "dependencies": {
-    "@vercel/postgres": "^0.10.0"
+    "@vercel/postgres": "^0.10.0",
+    "bysquare": "^4.0.1",
+    "qrcode": "^1.5.4"
   }
 }

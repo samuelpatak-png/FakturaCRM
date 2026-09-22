@@ -109,8 +109,34 @@ const Store = {
     }
   },
 
-  async setPaid(id, paid) {
-    return this.updateInvoice(id, { paidAt: paid ? todayISO() : null });
+  // -- Platby (podporujú aj čiastočné platby) --------------------------
+  async addPayment(id, amount, date) {
+    const inv = this.getInvoice(id);
+    if (!inv) return null;
+    const payments = (inv.payments || []).concat([{ date: date || todayISO(), amount: Number(amount) || 0 }]);
+    return this.updateInvoice(id, { payments, paidAt: null });
+  },
+
+  async removePayment(id, index) {
+    const inv = this.getInvoice(id);
+    if (!inv) return null;
+    const payments = (inv.payments || []).slice();
+    payments.splice(index, 1);
+    return this.updateInvoice(id, { payments });
+  },
+
+  // Rýchla akcia: doplatiť celý zostatok jedným klikom.
+  async markFullyPaid(id) {
+    const inv = this.getInvoice(id);
+    if (!inv) return null;
+    const remaining = getRemainingAmount(inv);
+    if (remaining <= 0) return inv;
+    return this.addPayment(id, remaining);
+  },
+
+  // Rýchla akcia: vynulovať všetky zaznamenané platby.
+  async markUnpaid(id) {
+    return this.updateInvoice(id, { payments: [], paidAt: null });
   },
 
   async wipeInvoices() {
@@ -118,9 +144,10 @@ const Store = {
     _invoicesCache = [];
   },
 
-  nextInvoiceNumber(settings) {
+  nextInvoiceNumber(settings, docType) {
     const year = new Date().getFullYear();
-    const prefix = (settings.invoicePrefix || 'FA').trim() || 'FA';
+    const prefixes = { invoice: settings.invoicePrefix || 'FA', quote: 'CP', credit_note: 'DOB' };
+    const prefix = (prefixes[docType] || prefixes.invoice).trim() || 'FA';
     const pattern = new RegExp('^' + escapeRegex(prefix) + '-' + year + '-(\\d+)$');
     let max = 0;
     this.getInvoices().forEach((inv) => {
@@ -129,6 +156,32 @@ const Store = {
     });
     const next = String(max + 1).padStart(3, '0');
     return `${prefix}-${year}-${next}`;
+  },
+
+  // Vytvorí novú faktúru z cenovej ponuky (rovnaký klient/položky, nové číslo a dátumy)
+  // a označí ponuku ako premenenú.
+  async convertQuoteToInvoice(quoteId) {
+    const quote = this.getInvoice(quoteId);
+    if (!quote) return null;
+    const settings = this.getSettings();
+    const issueDate = todayISO();
+    const number = this.nextInvoiceNumber(settings, 'invoice');
+    const data = {
+      number,
+      variableSymbol: number.replace(/\D/g, ''),
+      issueDate,
+      dueDate: addDays(issueDate, settings.defaultDueDays || 14),
+      deliveryDate: issueDate,
+      paymentMethod: quote.paymentMethod,
+      client: quote.client,
+      items: quote.items,
+      note: quote.note,
+      docType: 'invoice',
+      payments: [],
+    };
+    const created = await this.createInvoice(data);
+    await this.updateInvoice(quoteId, { convertedToInvoiceId: created.id, convertedToInvoiceNumber: created.number });
+    return created;
   },
 
   getClientSuggestions() {
@@ -168,37 +221,28 @@ const Store = {
   },
 
   // Jednoduchý peňažný denník (len príjmová strana — appka nesleduje výdaje) pre účtovníčku, ako CSV.
+  // Jeden riadok = jedna prijatá platba (aj čiastočná), nie jedna faktúra.
   exportPenaznyDennikCsv() {
-    const paid = this.getInvoices()
-      .filter((inv) => inv.paidAt)
-      .sort((a, b) => (a.paidAt || '').localeCompare(b.paidAt || ''));
-
-    const header = ['Dátum úhrady', 'Doklad č.', 'Odberateľ', 'Popis', 'Suma bez DPH (€)', 'DPH (€)', 'Suma s DPH (€)'];
-    const rows = paid.map((inv) => {
-      const totals = computeInvoiceTotals(inv);
+    const entries = [];
+    this.getInvoices().forEach((inv) => {
+      if ((inv.docType || 'invoice') !== 'invoice') return;
       const desc = (inv.items || []).map((it) => it.description).filter(Boolean).join('; ');
-      return [
-        formatDate(inv.paidAt),
-        inv.number || '',
-        (inv.client && inv.client.name) || '',
-        desc,
-        csvAmount(totals.subtotal),
-        csvAmount(totals.vatTotal),
-        csvAmount(totals.total),
-      ];
+      getInvoicePayments(inv).forEach((p) => {
+        entries.push({
+          date: p.date || '',
+          number: inv.number || '',
+          client: (inv.client && inv.client.name) || '',
+          desc,
+          amount: Number(p.amount) || 0,
+        });
+      });
     });
+    entries.sort((a, b) => a.date.localeCompare(b.date));
 
-    const sums = paid.reduce(
-      (acc, inv) => {
-        const t = computeInvoiceTotals(inv);
-        acc.subtotal += t.subtotal;
-        acc.vat += t.vatTotal;
-        acc.total += t.total;
-        return acc;
-      },
-      { subtotal: 0, vat: 0, total: 0 }
-    );
-    rows.push(['', '', '', 'Spolu', csvAmount(sums.subtotal), csvAmount(sums.vat), csvAmount(sums.total)]);
+    const header = ['Dátum úhrady', 'Doklad č.', 'Odberateľ', 'Popis', 'Suma (€)'];
+    const rows = entries.map((e) => [formatDate(e.date), e.number, e.client, e.desc, csvAmount(e.amount)]);
+    const total = entries.reduce((sum, e) => sum + e.amount, 0);
+    rows.push(['', '', '', 'Spolu', csvAmount(total)]);
 
     const lines = [header, ...rows].map((row) => row.map(csvEscape).join(';'));
     return '﻿' + lines.join('\r\n'); // BOM, nech Excel správne zobrazí diakritiku
@@ -252,17 +296,40 @@ function computeInvoiceTotals(invoice) {
   };
 }
 
+// Zoznam platieb faktúry — normalizovaný aj pre staršie faktúry, ktoré majú len paidAt
+// (z čias pred čiastočnými platbami): tie sa berú ako jedna platba na celú sumu.
+function getInvoicePayments(invoice) {
+  if (invoice.payments && invoice.payments.length) return invoice.payments;
+  if (invoice.paidAt) return [{ date: invoice.paidAt, amount: computeInvoiceTotals(invoice).total }];
+  return [];
+}
+
+function getAmountPaid(invoice) {
+  return getInvoicePayments(invoice).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+}
+
+function getRemainingAmount(invoice) {
+  const total = computeInvoiceTotals(invoice).total;
+  return Math.max(0, total - getAmountPaid(invoice));
+}
+
+// Poradie zámerne: zaplatená → po splatnosti (aj keď je čiastočne uhradená — to potrebuje
+// najviac pozornosti) → čiastočne zaplatená → nezaplatená.
 function getInvoiceStatus(invoice) {
-  if (invoice.paidAt) return 'paid';
+  const total = computeInvoiceTotals(invoice).total;
+  const amountPaid = getAmountPaid(invoice);
+  if (total > 0 && amountPaid >= total) return 'paid';
   const due = invoice.dueDate ? new Date(invoice.dueDate) : null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   if (due && due < today) return 'overdue';
+  if (amountPaid > 0) return 'partial';
   return 'unpaid';
 }
 
 const STATUS_LABELS = {
   paid: 'Zaplatená',
+  partial: 'Čiastočne zaplatená',
   unpaid: 'Nezaplatená',
   overdue: 'Po splatnosti',
 };
@@ -321,7 +388,11 @@ function monthShortLabel(key) {
 
 // ---- Agregácie pre dashboard a štatistiky --------------------------------
 
-// Príjem = súčet faktúr, ktoré sú ZAPLATENÉ, zaradený podľa dátumu úhrady (paidAt).
+function isRealInvoice(inv) {
+  return (inv.docType || 'invoice') === 'invoice';
+}
+
+// Príjem = súčet skutočne prijatých platieb (aj čiastočných), zaradený podľa dátumu KAŽDEJ platby.
 function getMonthlySeries(invoices, monthsCount) {
   const now = new Date();
   const keys = [];
@@ -331,11 +402,11 @@ function getMonthlySeries(invoices, monthsCount) {
   }
   const sums = new Map(keys.map((k) => [k, 0]));
   invoices.forEach((inv) => {
-    if (!inv.paidAt) return;
-    const key = monthKey(inv.paidAt);
-    if (sums.has(key)) {
-      sums.set(key, sums.get(key) + computeInvoiceTotals(inv).total);
-    }
+    if (!isRealInvoice(inv)) return;
+    getInvoicePayments(inv).forEach((p) => {
+      const key = monthKey(p.date);
+      if (sums.has(key)) sums.set(key, sums.get(key) + (Number(p.amount) || 0));
+    });
   });
   return keys.map((key) => ({
     key,
@@ -345,35 +416,45 @@ function getMonthlySeries(invoices, monthsCount) {
   }));
 }
 
+// Súčty podľa stavu faktúry. "sum" je suma ešte dlžná pri nezaplatených/čiastočných/po splatnosti
+// faktúrach, a celková suma pri zaplatených — nech "Neuhradené" vždy zobrazuje skutočný zostatok.
 function getStatusAggregates(invoices) {
   const result = {
     paid: { count: 0, sum: 0 },
+    partial: { count: 0, sum: 0 },
     unpaid: { count: 0, sum: 0 },
     overdue: { count: 0, sum: 0 },
   };
   invoices.forEach((inv) => {
+    if (!isRealInvoice(inv)) return;
     const status = getInvoiceStatus(inv);
     const total = computeInvoiceTotals(inv).total;
     result[status].count += 1;
-    result[status].sum += total;
+    result[status].sum += status === 'paid' ? total : getRemainingAmount(inv);
   });
   return result;
 }
 
 function sumPaidBetween(invoices, fromISO, toISO) {
-  return invoices
-    .filter((inv) => inv.paidAt && inv.paidAt >= fromISO && inv.paidAt <= toISO)
-    .reduce((sum, inv) => sum + computeInvoiceTotals(inv).total, 0);
+  let sum = 0;
+  invoices.forEach((inv) => {
+    if (!isRealInvoice(inv)) return;
+    getInvoicePayments(inv).forEach((p) => {
+      if (p.date >= fromISO && p.date <= toISO) sum += Number(p.amount) || 0;
+    });
+  });
+  return sum;
 }
 
 function getTopClients(invoices, limit) {
   const map = new Map();
   invoices.forEach((inv) => {
-    if (getInvoiceStatus(inv) !== 'paid') return;
+    if (!isRealInvoice(inv)) return;
+    const paidAmount = getAmountPaid(inv);
+    if (paidAmount <= 0) return;
     const name = (inv.client && inv.client.name) || 'Neznámy klient';
-    const total = computeInvoiceTotals(inv).total;
     const entry = map.get(name) || { name, sum: 0, count: 0 };
-    entry.sum += total;
+    entry.sum += paidAmount;
     entry.count += 1;
     map.set(name, entry);
   });
@@ -387,10 +468,9 @@ function getTopClients(invoices, limit) {
 function getClientOverview(invoices) {
   const map = new Map();
   invoices.forEach((inv) => {
+    if (!isRealInvoice(inv)) return;
     const name = (inv.client && inv.client.name) || '';
     if (!name) return;
-    const totals = computeInvoiceTotals(inv);
-    const status = getInvoiceStatus(inv);
     const entry = map.get(name) || {
       name,
       count: 0,
@@ -400,8 +480,8 @@ function getClientOverview(invoices) {
       info: inv.client,
     };
     entry.count += 1;
-    if (status === 'paid') entry.paidSum += totals.total;
-    else entry.outstandingSum += totals.total;
+    entry.paidSum += getAmountPaid(inv);
+    entry.outstandingSum += getRemainingAmount(inv);
     const invDate = inv.issueDate || '';
     if (invDate >= entry.lastDate) {
       entry.lastDate = invDate;
@@ -414,6 +494,6 @@ function getClientOverview(invoices) {
 
 function getClientInvoices(invoices, name) {
   return invoices
-    .filter((inv) => (inv.client && inv.client.name) === name)
+    .filter((inv) => isRealInvoice(inv) && (inv.client && inv.client.name) === name)
     .sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || ''));
 }

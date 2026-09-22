@@ -91,8 +91,8 @@ Views.clientDetail = function renderClientDetail(root, params) {
 
   const info = invoices[0].client || {};
   const agg = getStatusAggregates(invoices);
-  const outstandingSum = agg.unpaid.sum + agg.overdue.sum;
-  const outstandingCount = agg.unpaid.count + agg.overdue.count;
+  const outstandingSum = agg.unpaid.sum + agg.overdue.sum + agg.partial.sum;
+  const outstandingCount = agg.unpaid.count + agg.overdue.count + agg.partial.count;
 
   root.innerHTML = `
     <div class="page-header">

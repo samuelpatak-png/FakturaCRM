@@ -2,26 +2,30 @@
 'use strict';
 
 Views.statistics = function renderStatistics(root) {
-  const invoices = Store.getInvoices();
-  const agg = getStatusAggregates(invoices);
+  const allInvoices = Store.getInvoices();
+  const invoices = allInvoices.filter((inv) => (inv.docType || 'invoice') === 'invoice');
+  const agg = getStatusAggregates(allInvoices);
   const totalCount = invoices.length;
 
   const avgInvoiceValue = totalCount
     ? invoices.reduce((sum, inv) => sum + computeInvoiceTotals(inv).total, 0) / totalCount
     : 0;
 
-  const paidWithDates = invoices.filter((inv) => inv.paidAt && inv.issueDate);
-  const avgDaysToPay = paidWithDates.length
+  // Priemerný počet dní od vystavenia po úplné zaplatenie (posledná platba, ktorá faktúru doplatila).
+  const fullyPaid = invoices.filter((inv) => getInvoiceStatus(inv) === 'paid' && inv.issueDate);
+  const avgDaysToPay = fullyPaid.length
     ? Math.round(
-        paidWithDates.reduce((sum, inv) => {
-          const days = (new Date(inv.paidAt) - new Date(inv.issueDate)) / 86400000;
+        fullyPaid.reduce((sum, inv) => {
+          const payments = getInvoicePayments(inv);
+          const lastPaymentDate = payments.reduce((max, p) => (p.date > max ? p.date : max), '');
+          const days = lastPaymentDate ? (new Date(lastPaymentDate) - new Date(inv.issueDate)) / 86400000 : 0;
           return sum + Math.max(0, days);
-        }, 0) / paidWithDates.length
+        }, 0) / fullyPaid.length
       )
     : null;
 
   const uniqueClients = new Set(invoices.map((inv) => (inv.client && inv.client.name) || '').filter(Boolean)).size;
-  const topClients = getTopClients(invoices, 8);
+  const topClients = getTopClients(allInvoices, 8);
 
   root.innerHTML = `
     <div class="page-header">
@@ -102,6 +106,7 @@ Views.statistics = function renderStatistics(root) {
   const donutCanvas = document.getElementById('statsDonut');
   const donutSegments = [
     { label: 'Zaplatené', value: agg.paid.sum, color: cssVar('--color-good') },
+    { label: 'Čiastočne', value: agg.partial.sum, color: cssVar('--color-info') },
     { label: 'Nezaplatené', value: agg.unpaid.sum, color: cssVar('--color-warning') },
     { label: 'Po splatnosti', value: agg.overdue.sum, color: cssVar('--color-critical') },
   ].filter((s) => s.value > 0);

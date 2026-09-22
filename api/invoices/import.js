@@ -20,8 +20,17 @@ module.exports = async (req, res) => {
     for (const inv of invoices) {
       const id = inv.id || randomUUID();
       await sql`
-        INSERT INTO invoices (id, number, variable_symbol, issue_date, due_date, delivery_date, payment_method, client, items, note, paid_at, created_at)
-        VALUES (${id}, ${inv.number}, ${inv.variableSymbol || null}, ${inv.issueDate || null}, ${inv.dueDate || null}, ${inv.deliveryDate || null}, ${inv.paymentMethod || null}, ${JSON.stringify(inv.client || {})}, ${JSON.stringify(inv.items || [])}, ${inv.note || null}, ${inv.paidAt || null}, ${inv.createdAt || new Date().toISOString()})
+        INSERT INTO invoices (
+          id, number, variable_symbol, issue_date, due_date, delivery_date, payment_method,
+          client, items, note, paid_at, created_at, payments, doc_type,
+          related_invoice_id, related_invoice_number, converted_to_invoice_id, converted_to_invoice_number, valid_until
+        )
+        VALUES (
+          ${id}, ${inv.number}, ${inv.variableSymbol || null}, ${inv.issueDate || null}, ${inv.dueDate || null}, ${inv.deliveryDate || null}, ${inv.paymentMethod || null},
+          ${JSON.stringify(inv.client || {})}, ${JSON.stringify(inv.items || [])}, ${inv.note || null}, ${inv.paidAt || null}, ${inv.createdAt || new Date().toISOString()},
+          ${JSON.stringify(inv.payments || [])}, ${inv.docType || 'invoice'},
+          ${inv.relatedInvoiceId || null}, ${inv.relatedInvoiceNumber || null}, ${inv.convertedToInvoiceId || null}, ${inv.convertedToInvoiceNumber || null}, ${inv.validUntil || null}
+        )
       `;
     }
 

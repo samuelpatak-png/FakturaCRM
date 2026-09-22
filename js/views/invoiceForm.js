@@ -1,8 +1,13 @@
-// Obrazovka: Nová / Upraviť faktúru
+// Obrazovka: Nová / Upraviť faktúru, cenovú ponuku alebo dobropis
 'use strict';
 
 const UNIT_OPTIONS = ['ks', 'hod', 'deň', 'mesiac', 'km', 'balík', 'sada'];
 const PAYMENT_METHODS = ['Bankový prevod', 'Hotovosť', 'Platobná karta'];
+const DOC_TYPE_META = {
+  invoice: { label: 'Faktúra', newTitle: 'Nová faktúra', editTitle: 'Upraviť faktúru', saveLabel: 'Uložiť faktúru' },
+  quote: { label: 'Cenová ponuka', newTitle: 'Nová cenová ponuka', editTitle: 'Upraviť cenovú ponuku', saveLabel: 'Uložiť ponuku' },
+  credit_note: { label: 'Dobropis', newTitle: 'Nový dobropis', editTitle: 'Upraviť dobropis', saveLabel: 'Uložiť dobropis' },
+};
 
 // Mimo-klik poslucháč pre autocomplete sa pri každom vykreslení formulára nahrádza,
 // nech sa pri opakovanom otvorení formulára nehromadí na document.
@@ -16,49 +21,80 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
   if (editingId && !existing) {
     root.innerHTML = emptyStateHtml({
       icon: Icons.alertTriangle,
-      title: 'Faktúra sa nenašla',
-      message: 'Táto faktúra už možno bola odstránená.',
+      title: 'Dokument sa nenašiel',
+      message: 'Tento dokument už možno bol odstránený.',
       actionHtml: `<a href="#invoices" class="btn btn-primary">Späť na faktúry</a>`,
     });
     return;
   }
+
+  const initialDocType = existing
+    ? (existing.docType || 'invoice')
+    : (['invoice', 'quote', 'credit_note'].includes(params && params.docType) ? params.docType : 'invoice');
+  const relatedInvoice = !existing && initialDocType === 'credit_note' && params && params.relatedInvoiceId
+    ? Store.getInvoice(params.relatedInvoiceId)
+    : null;
 
   const defaultIssueDate = todayISO();
   const state = existing
     ? JSON.parse(JSON.stringify(existing))
     : {
         id: null,
-        number: Store.nextInvoiceNumber(settings),
+        docType: initialDocType,
+        number: Store.nextInvoiceNumber(settings, initialDocType),
         variableSymbol: '',
         issueDate: defaultIssueDate,
         dueDate: addDays(defaultIssueDate, settings.defaultDueDays || 14),
         deliveryDate: defaultIssueDate,
+        validUntil: initialDocType === 'quote' ? addDays(defaultIssueDate, 30) : '',
         paymentMethod: PAYMENT_METHODS[0],
-        client: { name: '', street: '', city: '', zip: '', country: 'Slovensko', ico: '', dic: '', icDph: '', email: '' },
+        client: relatedInvoice ? relatedInvoice.client : { name: '', street: '', city: '', zip: '', country: 'Slovensko', ico: '', dic: '', icDph: '', email: '' },
         items: [emptyItem(settings)],
         note: '',
+        payments: [],
+        relatedInvoiceId: relatedInvoice ? relatedInvoice.id : '',
+        relatedInvoiceNumber: relatedInvoice ? relatedInvoice.number : '',
       };
+  if (!state.docType) state.docType = 'invoice';
   if (!state.client) state.client = { name: '', street: '', city: '', zip: '', country: 'Slovensko', ico: '', dic: '', icDph: '', email: '' };
   if (!state.items || !state.items.length) state.items = [emptyItem(settings)];
   state.variableSymbol = state.variableSymbol || state.number.replace(/\D/g, '');
 
   let dueDateTouched = !!existing;
+  const meta = DOC_TYPE_META[state.docType];
+  const invoiceOptions = Store.getInvoices().filter((inv) => (inv.docType || 'invoice') === 'invoice');
 
   root.innerHTML = `
     <div class="page-header">
       <div>
-        <h1>${existing ? 'Upraviť faktúru' : 'Nová faktúra'}</h1>
-        <p class="page-subtitle">${existing ? escapeHtml(existing.number) : 'Vyplň údaje a vystav faktúru'}</p>
+        <h1>${existing ? meta.editTitle : meta.newTitle}</h1>
+        <p class="page-subtitle">${existing ? escapeHtml(existing.number) : 'Vyplň údaje a vystav dokument'}</p>
       </div>
     </div>
 
     <form id="invoiceForm" novalidate>
+      ${!existing ? `
+      <div class="card card-pad" style="margin-bottom:20px;">
+        <div class="form-section" style="margin-bottom:0;">
+          <div class="form-section-title">Typ dokumentu</div>
+          <div class="filter-chips" id="docTypeChips" role="group" aria-label="Typ dokumentu">
+            <button type="button" class="chip ${state.docType === 'invoice' ? 'active' : ''}" data-doctype="invoice">Faktúra</button>
+            <button type="button" class="chip ${state.docType === 'quote' ? 'active' : ''}" data-doctype="quote">Cenová ponuka</button>
+            <button type="button" class="chip ${state.docType === 'credit_note' ? 'active' : ''}" data-doctype="credit_note">Dobropis</button>
+          </div>
+        </div>
+      </div>` : `
+      <div class="card card-pad" style="margin-bottom:20px; display:flex; align-items:center; gap:10px;">
+        <span class="badge badge-neutral">${meta.label}</span>
+        ${state.docType === 'credit_note' && state.relatedInvoiceNumber ? `<span class="cell-sub">Súvisí s faktúrou ${escapeHtml(state.relatedInvoiceNumber)}</span>` : ''}
+      </div>`}
+
       <div class="card card-pad" style="margin-bottom:20px;">
         <div class="form-section">
           <div class="form-section-title">Základné údaje</div>
           <div class="form-grid cols-3">
             <div class="field">
-              <label for="f-number">Číslo faktúry *</label>
+              <label for="f-number">Číslo *</label>
               <input type="text" id="f-number" value="${escapeHtml(state.number)}" required>
               <span class="error-text" data-error="number" hidden></span>
             </div>
@@ -76,14 +112,27 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
               <label for="f-issue">Dátum vystavenia *</label>
               <input type="date" id="f-issue" value="${state.issueDate}" required>
             </div>
-            <div class="field">
+            <div class="field" id="dueDateField" style="${state.docType === 'quote' ? 'display:none;' : ''}">
               <label for="f-due">Dátum splatnosti *</label>
-              <input type="date" id="f-due" value="${state.dueDate}" required>
+              <input type="date" id="f-due" value="${state.dueDate}" ${state.docType === 'quote' ? '' : 'required'}>
               <span class="error-text" data-error="dueDate" hidden></span>
             </div>
-            <div class="field">
+            <div class="field" id="deliveryDateField" style="${state.docType === 'quote' ? 'display:none;' : ''}">
               <label for="f-delivery">Dátum dodania</label>
               <input type="date" id="f-delivery" value="${state.deliveryDate || state.issueDate}">
+            </div>
+            <div class="field" id="validUntilField" style="${state.docType === 'quote' ? '' : 'display:none;'}">
+              <label for="f-validuntil">Ponuka platná do</label>
+              <input type="date" id="f-validuntil" value="${state.validUntil || ''}">
+            </div>
+            <div class="field span-2" id="relatedInvoiceField" style="${state.docType === 'credit_note' ? '' : 'display:none;'}">
+              <label for="f-related">Súvisiaca faktúra</label>
+              <select id="f-related">
+                <option value="">— vyber faktúru —</option>
+                ${invoiceOptions.map((inv) => `<option value="${inv.id}" ${state.relatedInvoiceId === inv.id ? 'selected' : ''}>${escapeHtml(inv.number)} — ${escapeHtml((inv.client && inv.client.name) || '')}</option>`).join('')}
+              </select>
+              <span class="hint">Faktúra, ktorú tento dobropis opravuje. Pri položkách zadaj záporné množstvo/sumu podľa toho, čo sa opravuje.</span>
+              <span class="error-text" data-error="related" hidden></span>
             </div>
           </div>
         </div>
@@ -160,14 +209,14 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
 
       <div class="card card-pad" style="margin-bottom:20px;">
         <div class="field">
-          <label for="f-note">Poznámka na faktúre</label>
+          <label for="f-note">Poznámka na dokumente</label>
           <textarea id="f-note">${escapeHtml(state.note || '')}</textarea>
         </div>
       </div>
 
       <div class="form-actions">
         <a href="${existing ? `#invoice/view/${existing.id}` : '#invoices'}" class="btn btn-secondary">Zrušiť</a>
-        <button type="submit" class="btn btn-primary">${Icons.checkCircle} Uložiť faktúru</button>
+        <button type="submit" class="btn btn-primary">${Icons.checkCircle} ${meta.saveLabel}</button>
       </div>
     </form>
   `;
@@ -178,7 +227,8 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
 
   function renderItems() {
     const canDelete = state.items.length > 1;
-    itemsBody.innerHTML = state.items.map((item, idx) => itemRowHtml(item, idx, canDelete)).join('');
+    const allowNegative = state.docType === 'credit_note';
+    itemsBody.innerHTML = state.items.map((item, idx) => itemRowHtml(item, idx, canDelete, allowNegative)).join('');
     wireItemRowEvents();
     recalcTotals();
   }
@@ -216,7 +266,8 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
         html += `<div class="totals-row"><span>DPH ${v.rate}%</span><span class="num-cell">${formatCurrency(v.amount)}</span></div>`;
       });
     }
-    html += `<div class="totals-row grand"><span>Spolu na úhradu</span><span class="num-cell">${formatCurrency(totals.total)}</span></div>`;
+    const grandLabel = state.docType === 'quote' ? 'Cena spolu' : state.docType === 'credit_note' ? 'Suma dobropisu' : 'Spolu na úhradu';
+    html += `<div class="totals-row grand"><span>${grandLabel}</span><span class="num-cell">${formatCurrency(totals.total)}</span></div>`;
     totalsBox.innerHTML = html;
   }
 
@@ -226,6 +277,29 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
   });
 
   renderItems();
+
+  const docTypeChips = root.querySelector('#docTypeChips');
+  if (docTypeChips) {
+    docTypeChips.querySelectorAll('.chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        if (chip.dataset.doctype === state.docType) return;
+        Views.invoiceForm(root, { docType: chip.dataset.doctype });
+      });
+    });
+  }
+
+  const validUntilInput = root.querySelector('#f-validuntil');
+  if (validUntilInput) {
+    validUntilInput.addEventListener('input', () => { state.validUntil = validUntilInput.value; });
+  }
+  const relatedSelect = root.querySelector('#f-related');
+  if (relatedSelect) {
+    relatedSelect.addEventListener('change', () => {
+      const rel = Store.getInvoice(relatedSelect.value);
+      state.relatedInvoiceId = rel ? rel.id : '';
+      state.relatedInvoiceNumber = rel ? rel.number : '';
+    });
+  }
 
   // -- Klient: prepojenie polí so stavom + autocomplete --
   const clientFieldMap = {
@@ -343,17 +417,18 @@ function emptyItem(settings) {
   return { description: '', quantity: 1, unit: 'ks', unitPrice: 0, vatRate: settings.isVatPayer ? (settings.defaultVatRate || 0) : 0 };
 }
 
-function itemRowHtml(item, idx, canDelete) {
+function itemRowHtml(item, idx, canDelete, allowNegative) {
+  const numMin = allowNegative ? '' : 'min="0"';
   return `
     <tr data-index="${idx}">
       <td class="col-desc"><input type="text" class="i-desc" value="${escapeHtml(item.description)}" placeholder="Napr. Konzultačné služby"></td>
-      <td class="col-qty"><input type="number" class="i-qty" value="${item.quantity}" min="0" step="0.5"></td>
+      <td class="col-qty"><input type="number" class="i-qty" value="${item.quantity}" ${numMin} step="0.5"></td>
       <td class="col-unit">
         <select class="i-unit">
           ${UNIT_OPTIONS.map((u) => `<option value="${u}" ${item.unit === u ? 'selected' : ''}>${u}</option>`).join('')}
         </select>
       </td>
-      <td class="col-price"><input type="number" class="i-price" value="${item.unitPrice}" min="0" step="0.01"></td>
+      <td class="col-price"><input type="number" class="i-price" value="${item.unitPrice}" ${numMin} step="0.01"></td>
       <td class="col-vat"><input type="number" class="i-vat" value="${item.vatRate}" min="0" max="100" step="1"></td>
       <td class="col-total"><div class="item-total">${formatCurrency(computeItemTotal(item))}</div></td>
       <td class="col-del">${canDelete ? `<button type="button" class="btn btn-icon btn-ghost btn-sm i-del" aria-label="Odstrániť položku">${Icons.trash}</button>` : ''}</td>
@@ -362,10 +437,17 @@ function itemRowHtml(item, idx, canDelete) {
 
 function validateInvoice(state) {
   const errors = {};
-  if (!state.number || !state.number.trim()) errors.number = 'Zadaj číslo faktúry.';
+  if (!state.number || !state.number.trim()) errors.number = 'Zadaj číslo dokladu.';
   if (!state.client.name || !state.client.name.trim()) errors.clientName = 'Zadaj názov alebo meno odberateľa.';
-  if (state.dueDate && state.issueDate && state.dueDate < state.issueDate) errors.dueDate = 'Splatnosť nemôže byť pred dátumom vystavenia.';
-  const validItems = state.items.filter((it) => it.description.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0);
+  if (state.docType !== 'quote' && state.dueDate && state.issueDate && state.dueDate < state.issueDate) {
+    errors.dueDate = 'Splatnosť nemôže byť pred dátumom vystavenia.';
+  }
+  if (state.docType === 'credit_note' && !state.relatedInvoiceId) {
+    errors.related = 'Vyber faktúru, ktorú dobropis opravuje.';
+  }
+  const validItems = state.docType === 'credit_note'
+    ? state.items.filter((it) => it.description.trim() && Number(it.quantity) !== 0)
+    : state.items.filter((it) => it.description.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0);
   if (!validItems.length) errors.items = 'Pridaj aspoň jednu položku s popisom, množstvom a cenou.';
   return errors;
 }
@@ -383,4 +465,5 @@ function showFormErrors(root, errors) {
   if (errors.number) root.querySelector('#f-number').classList.add('invalid');
   if (errors.clientName) root.querySelector('#f-client-name').classList.add('invalid');
   if (errors.dueDate) root.querySelector('#f-due').classList.add('invalid');
+  if (errors.related) root.querySelector('#f-related').classList.add('invalid');
 }

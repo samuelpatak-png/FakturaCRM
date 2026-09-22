@@ -24,9 +24,15 @@ function pluralInvoices(n) {
   return 'faktúr';
 }
 
+const STATUS_BADGE_CLASSES = {
+  paid: 'badge-good',
+  partial: 'badge-info',
+  overdue: 'badge-critical',
+  unpaid: 'badge-warning',
+};
+
 function statusBadgeHtml(status) {
-  const cls = status === 'paid' ? 'badge-good' : status === 'overdue' ? 'badge-critical' : 'badge-warning';
-  return `<span class="badge ${cls}">${STATUS_LABELS[status]}</span>`;
+  return `<span class="badge ${STATUS_BADGE_CLASSES[status] || 'badge-neutral'}">${STATUS_LABELS[status] || status}</span>`;
 }
 
 function chartEmptyHtml(message) {

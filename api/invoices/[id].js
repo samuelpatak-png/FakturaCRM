@@ -26,7 +26,14 @@ module.exports = async (req, res) => {
           client = ${JSON.stringify(inv.client || {})},
           items = ${JSON.stringify(inv.items || [])},
           note = ${inv.note || null},
-          paid_at = ${inv.paidAt || null}
+          paid_at = ${inv.paidAt || null},
+          payments = ${JSON.stringify(inv.payments || [])},
+          doc_type = ${inv.docType || 'invoice'},
+          related_invoice_id = ${inv.relatedInvoiceId || null},
+          related_invoice_number = ${inv.relatedInvoiceNumber || null},
+          converted_to_invoice_id = ${inv.convertedToInvoiceId || null},
+          converted_to_invoice_number = ${inv.convertedToInvoiceNumber || null},
+          valid_until = ${inv.validUntil || null}
         WHERE id = ${id}
       `;
       if (!rowCount) return res.status(404).json({ error: 'not_found' });
