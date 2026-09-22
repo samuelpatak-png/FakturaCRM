@@ -128,6 +128,12 @@ Views.settings = function renderSettings(root) {
         </div>
 
         <div class="card card-pad">
+          <div class="section-title" style="margin-bottom:6px;">Export pre účtovníka</div>
+          <p class="cell-sub" style="margin-bottom:16px;">Jednoduchý peňažný denník (len príjmy zo zaplatených faktúr) ako CSV, otvoríš v Exceli.</p>
+          <button class="btn btn-secondary" id="btnExportCsv" style="width:100%;">${Icons.fileText} Stiahnuť peňažný denník (CSV)</button>
+        </div>
+
+        <div class="card card-pad">
           <div class="section-title" style="margin-bottom:6px; color: var(--color-critical-text);">Nebezpečná zóna</div>
           <p class="cell-sub" style="margin-bottom:16px;">Natrvalo vymaže všetky faktúry z databázy appky.</p>
           <button class="btn btn-danger" id="btnWipe" style="width:100%;">${Icons.trash} Vymazať všetky faktúry</button>
@@ -180,18 +186,17 @@ Views.settings = function renderSettings(root) {
   });
 
   root.querySelector('#btnExport').addEventListener('click', () => {
-    const json = Store.exportAll();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const stamp = todayISO();
-    a.href = url;
-    a.download = `fakturacrm-zaloha-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    downloadFile(`fakturacrm-zaloha-${todayISO()}.json`, Store.exportAll(), 'application/json');
     App.toast('Záloha bola stiahnutá', 'good');
+  });
+
+  root.querySelector('#btnExportCsv').addEventListener('click', () => {
+    if (!Store.getInvoices().some((inv) => inv.paidAt)) {
+      App.toast('Zatiaľ nie sú žiadne zaplatené faktúry na export.', 'critical');
+      return;
+    }
+    downloadFile(`fakturacrm-penazny-dennik-${todayISO()}.csv`, Store.exportPenaznyDennikCsv(), 'text/csv;charset=utf-8');
+    App.toast('Peňažný denník bol stiahnutý', 'good');
   });
 
   const importInput = root.querySelector('#importFile');

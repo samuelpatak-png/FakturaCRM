@@ -402,6 +402,16 @@ th.num-cell { text-align: right; }
 .chip.active { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
 .spacer { flex: 1; }
 
+/* ============ Hromadné akcie ============ */
+.bulk-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--color-surface-alt); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); padding: 10px 16px; margin-bottom: 14px;
+}
+.bulk-bar #bulkCount { font-size: 14px; font-weight: 600; color: var(--color-fg); }
+th.col-checkbox, td.col-checkbox { width: 40px; padding-right: 0; }
+.col-checkbox input[type="checkbox"], .row-select { width: 18px; height: 18px; min-height: 0; accent-color: var(--color-primary); }
+
 /* ============ Forms ============ */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 13.5px; font-weight: 600; color: var(--color-fg-secondary); }
@@ -513,6 +523,11 @@ input.invalid, select.invalid { border-color: var(--color-critical); }
 }
 .toast.toast-good { background: var(--color-good-text); }
 .toast.toast-critical { background: var(--color-critical-text); }
+.toast.toast-undoable { padding-right: 12px; }
+.toast-undo-btn {
+  background: none; border: none; color: inherit; font-weight: 700;
+  text-decoration: underline; padding: 4px 2px; min-height: 0; flex-shrink: 0;
+}
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ============ Charts ============ */

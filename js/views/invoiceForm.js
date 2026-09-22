@@ -34,11 +34,11 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
         dueDate: addDays(defaultIssueDate, settings.defaultDueDays || 14),
         deliveryDate: defaultIssueDate,
         paymentMethod: PAYMENT_METHODS[0],
-        client: { name: '', street: '', city: '', zip: '', country: 'Slovensko', ico: '', dic: '', icDph: '' },
+        client: { name: '', street: '', city: '', zip: '', country: 'Slovensko', ico: '', dic: '', icDph: '', email: '' },
         items: [emptyItem(settings)],
         note: '',
       };
-  if (!state.client) state.client = { name: '', street: '', city: '', zip: '', country: 'Slovensko', ico: '', dic: '', icDph: '' };
+  if (!state.client) state.client = { name: '', street: '', city: '', zip: '', country: 'Slovensko', ico: '', dic: '', icDph: '', email: '' };
   if (!state.items || !state.items.length) state.items = [emptyItem(settings)];
   state.variableSymbol = state.variableSymbol || state.number.replace(/\D/g, '');
 
@@ -124,6 +124,11 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
             <div class="field">
               <label for="f-client-icdph">IČ DPH</label>
               <input type="text" id="f-client-icdph" value="${escapeHtml(state.client.icDph)}">
+            </div>
+            <div class="field">
+              <label for="f-client-email">E-mail</label>
+              <input type="email" id="f-client-email" value="${escapeHtml(state.client.email || '')}">
+              <span class="hint">Na odoslanie pripomienky pri nezaplatenej faktúre</span>
             </div>
           </div>
         </div>
@@ -226,7 +231,7 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
   const clientFieldMap = {
     'f-client-name': 'name', 'f-client-street': 'street', 'f-client-city': 'city',
     'f-client-zip': 'zip', 'f-client-country': 'country', 'f-client-ico': 'ico',
-    'f-client-dic': 'dic', 'f-client-icdph': 'icDph',
+    'f-client-dic': 'dic', 'f-client-icdph': 'icDph', 'f-client-email': 'email',
   };
   Object.entries(clientFieldMap).forEach(([elId, key]) => {
     root.querySelector('#' + elId).addEventListener('input', (e) => {

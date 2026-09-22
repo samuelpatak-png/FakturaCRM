@@ -29,6 +29,7 @@ Views.invoiceView = function renderInvoiceView(root, params) {
       <div class="row-actions" style="gap:8px;">
         <button class="btn btn-secondary" id="btnPrint">${Icons.printer} Tlačiť / PDF</button>
         <a href="#invoice/edit/${invoice.id}" class="btn btn-secondary">${Icons.edit} Upraviť</a>
+        ${!isPaid ? `<button class="btn btn-secondary" id="btnRemind">${Icons.mail} Poslať pripomienku</button>` : ''}
         <button class="btn ${isPaid ? 'btn-secondary' : 'btn-primary'}" id="btnTogglePaid">${Icons.checkCircle} ${isPaid ? 'Označiť ako nezaplatenú' : 'Označiť ako zaplatenú'}</button>
         <button class="btn btn-danger" id="btnDelete">${Icons.trash}</button>
       </div>
@@ -43,6 +44,16 @@ Views.invoiceView = function renderInvoiceView(root, params) {
 
   root.querySelector('#btnPrint').addEventListener('click', () => window.print());
 
+  const remindBtn = root.querySelector('#btnRemind');
+  if (remindBtn) {
+    remindBtn.addEventListener('click', () => {
+      if (!invoice.client || !invoice.client.email) {
+        App.toast('Klient nemá uložený e-mail — doplň ho v úprave faktúry.', 'critical');
+      }
+      window.location.href = buildReminderMailto(invoice, settings);
+    });
+  }
+
   root.querySelector('#btnTogglePaid').addEventListener('click', async () => {
     try {
       await Store.setPaid(invoice.id, !isPaid);
@@ -54,23 +65,21 @@ Views.invoiceView = function renderInvoiceView(root, params) {
     }
   });
 
-  root.querySelector('#btnDelete').addEventListener('click', async () => {
-    const ok = await App.confirm({
-      title: 'Odstrániť faktúru?',
-      message: `Faktúra ${invoice.number} bude natrvalo odstránená. Táto akcia sa nedá vrátiť späť.`,
-      confirmLabel: 'Odstrániť',
-      danger: true,
+  root.querySelector('#btnDelete').addEventListener('click', () => {
+    const removed = Store.removeFromCache(invoice.id);
+    App.navigate('invoices');
+    App.toastUndo(`Faktúra ${removed.number} bola odstránená`, {
+      onUndo: () => { Store.restoreToCache(removed); App.rerender(); },
+      onCommit: async () => {
+        try {
+          await Store.commitDeleteInvoice(removed.id);
+        } catch (err) {
+          Store.restoreToCache(removed);
+          App.rerender();
+          throw err;
+        }
+      },
     });
-    if (ok) {
-      try {
-        await Store.deleteInvoice(invoice.id);
-        App.toast('Faktúra odstránená');
-        App.navigate('invoices');
-      } catch (err) {
-        console.error(err);
-        App.toast('Faktúru sa nepodarilo odstrániť. Skús to znova.', 'critical');
-      }
-    }
   });
 };
 
@@ -110,6 +119,7 @@ function invoiceDocumentHtml(invoice, settings, status) {
         ${client.ico ? `<div>IČO: ${escapeHtml(client.ico)}</div>` : ''}
         ${client.dic ? `<div>DIČ: ${escapeHtml(client.dic)}</div>` : ''}
         ${client.icDph ? `<div>IČ DPH: ${escapeHtml(client.icDph)}</div>` : ''}
+        ${client.email ? `<div>${escapeHtml(client.email)}</div>` : ''}
       </div>
     </div>
 
@@ -159,4 +169,24 @@ function invoiceDocumentHtml(invoice, settings, status) {
       ${settings.swift ? `<span>SWIFT/BIC: ${escapeHtml(settings.swift)}</span>` : ''}
     </div>` : ''}
   `;
+}
+
+function buildReminderMailto(invoice, settings) {
+  const totals = computeInvoiceTotals(invoice);
+  const clientEmail = (invoice.client && invoice.client.email) || '';
+  const subject = `Pripomienka úhrady — faktúra č. ${invoice.number}`;
+  const lines = [
+    'Dobrý deň,',
+    '',
+    `dovoľujem si pripomenúť neuhradenú faktúru č. ${invoice.number} so splatnosťou ${formatDate(invoice.dueDate)} na sumu ${formatCurrency(totals.total)}.`,
+    '',
+    settings.iban ? `Bankové spojenie: ${settings.iban}` : '',
+    invoice.variableSymbol ? `Variabilný symbol: ${invoice.variableSymbol}` : '',
+    '',
+    'Ak platba už prebehla, tento e-mail prosím ignorujte. Ďakujem za spoluprácu.',
+    '',
+    settings.companyName || '',
+  ].filter((line) => line !== null && line !== undefined);
+  const body = lines.join('\n');
+  return `mailto:${encodeURIComponent(clientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }

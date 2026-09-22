@@ -48,6 +48,16 @@ Views.dashboard = function renderDashboard(root) {
       <a href="#settings" class="btn btn-secondary btn-sm">Otvoriť nastavenia</a>
     </div>` : ''}
 
+    ${agg.overdue.count > 0 ? `
+    <div class="card card-pad" style="margin-bottom:20px; display:flex; align-items:center; gap:14px; border-color: var(--color-critical);">
+      <div class="stat-icon critical">${Icons.alertTriangle}</div>
+      <div style="flex:1">
+        <strong>${agg.overdue.count} ${pluralInvoices(agg.overdue.count)} po splatnosti</strong>
+        <p class="cell-sub" style="margin-top:2px;">Spolu ${formatCurrency(agg.overdue.sum)} čaká na úhradu už po termíne. Oplatí sa klientom pripomenúť.</p>
+      </div>
+      <a href="#invoices/overdue" class="btn btn-secondary btn-sm">Zobraziť faktúry</a>
+    </div>` : ''}
+
     <div class="page-header">
       <div>
         <h1>Prehľad</h1>

@@ -1,8 +1,11 @@
 // Obrazovka: Zoznam faktúr
 'use strict';
 
-Views.invoices = function renderInvoices(root) {
-  const state = { search: '', filter: 'all', sortBy: 'issueDate', sortDir: 'desc' };
+const INVOICE_FILTERS = ['all', 'paid', 'unpaid', 'overdue'];
+
+Views.invoices = function renderInvoices(root, params) {
+  const initialFilter = INVOICE_FILTERS.includes(params && params.status) ? params.status : 'all';
+  const state = { search: '', filter: initialFilter, selected: new Set() };
 
   root.innerHTML = `
     <div class="page-header">
@@ -19,12 +22,21 @@ Views.invoices = function renderInvoices(root) {
         <input type="search" id="invSearch" placeholder="Hľadať podľa klienta alebo čísla faktúry…" aria-label="Hľadať faktúry">
       </div>
       <div class="filter-chips" id="filterChips" role="group" aria-label="Filter podľa stavu">
-        <button class="chip active" data-filter="all" type="button">Všetky</button>
-        <button class="chip" data-filter="paid" type="button">Zaplatené</button>
-        <button class="chip" data-filter="unpaid" type="button">Nezaplatené</button>
-        <button class="chip" data-filter="overdue" type="button">Po splatnosti</button>
+        <button class="chip ${initialFilter === 'all' ? 'active' : ''}" data-filter="all" type="button">Všetky</button>
+        <button class="chip ${initialFilter === 'paid' ? 'active' : ''}" data-filter="paid" type="button">Zaplatené</button>
+        <button class="chip ${initialFilter === 'unpaid' ? 'active' : ''}" data-filter="unpaid" type="button">Nezaplatené</button>
+        <button class="chip ${initialFilter === 'overdue' ? 'active' : ''}" data-filter="overdue" type="button">Po splatnosti</button>
       </div>
       <div class="spacer"></div>
+    </div>
+
+    <div class="bulk-bar" id="bulkBar" hidden>
+      <span id="bulkCount"></span>
+      <div class="spacer"></div>
+      <button class="btn btn-secondary btn-sm" data-bulk="paid">${Icons.checkCircle} Označiť ako zaplatené</button>
+      <button class="btn btn-secondary btn-sm" data-bulk="unpaid">Označiť ako nezaplatené</button>
+      <button class="btn btn-danger btn-sm" data-bulk="delete">${Icons.trash} Odstrániť</button>
+      <button class="btn btn-ghost btn-sm" data-bulk="clear">Zrušiť výber</button>
     </div>
 
     <div class="card">
@@ -34,11 +46,11 @@ Views.invoices = function renderInvoices(root) {
 
   const container = root.querySelector('#invoicesTableContainer');
   const searchInput = root.querySelector('#invSearch');
+  const bulkBar = root.querySelector('#bulkBar');
+  const bulkCount = root.querySelector('#bulkCount');
 
-  function applyFilters() {
+  function currentList() {
     let list = Store.getInvoices();
-    const total = list.length;
-
     if (state.filter !== 'all') {
       list = list.filter((inv) => getInvoiceStatus(inv) === state.filter);
     }
@@ -50,7 +62,23 @@ Views.invoices = function renderInvoices(root) {
       });
     }
     list.sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || ''));
+    return list;
+  }
 
+  function updateBulkBar(visibleIds) {
+    const selectedVisible = visibleIds.filter((id) => state.selected.has(id));
+    bulkBar.hidden = state.selected.size === 0;
+    bulkCount.textContent = `Vybraných: ${state.selected.size}`;
+    const selectAllChk = container.querySelector('#selectAllChk');
+    if (selectAllChk) {
+      selectAllChk.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+      selectAllChk.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    }
+  }
+
+  function applyFilters() {
+    const total = Store.getInvoices().length;
+    const list = currentList();
     renderTable(container, list, total);
   }
 
@@ -59,19 +87,63 @@ Views.invoices = function renderInvoices(root) {
       root.querySelectorAll('#filterChips .chip').forEach((c) => c.classList.remove('active'));
       chip.classList.add('active');
       state.filter = chip.dataset.filter;
+      state.selected.clear();
       applyFilters();
     });
   });
 
   searchInput.addEventListener('input', () => {
     state.search = searchInput.value;
+    state.selected.clear();
     applyFilters();
   });
+
+  bulkBar.querySelector('[data-bulk="clear"]').addEventListener('click', () => {
+    state.selected.clear();
+    applyFilters();
+  });
+
+  bulkBar.querySelector('[data-bulk="paid"]').addEventListener('click', () => runBulkPaid(true));
+  bulkBar.querySelector('[data-bulk="unpaid"]').addEventListener('click', () => runBulkPaid(false));
+  bulkBar.querySelector('[data-bulk="delete"]').addEventListener('click', runBulkDelete);
+
+  async function runBulkPaid(paid) {
+    const ids = Array.from(state.selected);
+    try {
+      await Promise.all(ids.map((id) => Store.setPaid(id, paid)));
+      App.toast(`Upravených faktúr: ${ids.length} (${paid ? 'zaplatené' : 'nezaplatené'})`, 'good');
+    } catch (err) {
+      console.error(err);
+      App.toast('Niektoré faktúry sa nepodarilo upraviť. Skús to znova.', 'critical');
+    }
+    state.selected.clear();
+    applyFilters();
+  }
+
+  function runBulkDelete() {
+    const ids = Array.from(state.selected);
+    const removedList = ids.map((id) => Store.removeFromCache(id)).filter(Boolean);
+    state.selected.clear();
+    applyFilters();
+    App.toastUndo(`Odstránené faktúry: ${removedList.length}`, {
+      onUndo: () => { removedList.forEach((inv) => Store.restoreToCache(inv)); applyFilters(); },
+      onCommit: async () => {
+        try {
+          await Promise.all(removedList.map((inv) => Store.commitDeleteInvoice(inv.id)));
+        } catch (err) {
+          removedList.forEach((inv) => Store.restoreToCache(inv));
+          applyFilters();
+          throw err;
+        }
+      },
+    });
+  }
 
   applyFilters();
 
   function renderTable(el, list, totalCount) {
     if (totalCount === 0) {
+      bulkBar.hidden = true;
       el.innerHTML = emptyStateHtml({
         icon: Icons.fileText,
         title: 'Zatiaľ žiadne faktúry',
@@ -81,6 +153,7 @@ Views.invoices = function renderInvoices(root) {
       return;
     }
     if (list.length === 0) {
+      bulkBar.hidden = true;
       el.innerHTML = emptyStateHtml({
         icon: Icons.search,
         title: 'Žiadne výsledky',
@@ -89,22 +162,44 @@ Views.invoices = function renderInvoices(root) {
       return;
     }
 
+    const visibleIds = list.map((inv) => inv.id);
+
     el.innerHTML = `
       <div class="table-wrap">
         <table>
           <thead><tr>
+            <th class="col-checkbox"><input type="checkbox" id="selectAllChk" aria-label="Vybrať všetky"></th>
             <th>Faktúra</th><th>Klient</th><th>Vystavená</th><th>Splatnosť</th>
             <th class="num-cell">Suma</th><th>Stav</th><th></th>
           </tr></thead>
-          <tbody>${list.map(invoiceRowHtml).join('')}</tbody>
+          <tbody>${list.map((inv) => invoiceRowHtml(inv, state.selected.has(inv.id))).join('')}</tbody>
         </table>
       </div>`;
+
+    updateBulkBar(visibleIds);
 
     el.querySelectorAll('tbody tr').forEach((tr) => {
       const id = tr.dataset.id;
       tr.addEventListener('click', (e) => {
-        if (e.target.closest('[data-action]')) return;
+        if (e.target.closest('[data-action]') || e.target.closest('.row-select')) return;
         App.navigate(`invoice/view/${id}`);
+      });
+    });
+
+    el.querySelector('#selectAllChk').addEventListener('change', (e) => {
+      if (e.target.checked) visibleIds.forEach((id) => state.selected.add(id));
+      else visibleIds.forEach((id) => state.selected.delete(id));
+      el.querySelectorAll('.row-select').forEach((chk) => { chk.checked = e.target.checked; });
+      updateBulkBar(visibleIds);
+    });
+
+    el.querySelectorAll('.row-select').forEach((chk) => {
+      chk.addEventListener('click', (e) => e.stopPropagation());
+      chk.addEventListener('change', (e) => {
+        const id = e.target.dataset.id;
+        if (e.target.checked) state.selected.add(id);
+        else state.selected.delete(id);
+        updateBulkBar(visibleIds);
       });
     });
 
@@ -133,37 +228,36 @@ Views.invoices = function renderInvoices(root) {
     });
 
     el.querySelectorAll('[data-action="delete"]').forEach((btn) => {
-      btn.addEventListener('click', async (e) => {
+      btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const id = btn.dataset.id;
-        const inv = Store.getInvoice(id);
-        const ok = await App.confirm({
-          title: 'Odstrániť faktúru?',
-          message: `Faktúra ${inv.number} bude natrvalo odstránená. Táto akcia sa nedá vrátiť späť.`,
-          confirmLabel: 'Odstrániť',
-          danger: true,
+        const removed = Store.removeFromCache(id);
+        state.selected.delete(id);
+        applyFilters();
+        App.toastUndo(`Faktúra ${removed.number} bola odstránená`, {
+          onUndo: () => { Store.restoreToCache(removed); applyFilters(); },
+          onCommit: async () => {
+            try {
+              await Store.commitDeleteInvoice(removed.id);
+            } catch (err) {
+              Store.restoreToCache(removed);
+              applyFilters();
+              throw err;
+            }
+          },
         });
-        if (ok) {
-          try {
-            await Store.deleteInvoice(id);
-            App.toast('Faktúra odstránená');
-            applyFilters();
-          } catch (err) {
-            console.error(err);
-            App.toast('Faktúru sa nepodarilo odstrániť. Skús to znova.', 'critical');
-          }
-        }
       });
     });
   }
 };
 
-function invoiceRowHtml(inv) {
+function invoiceRowHtml(inv, selected) {
   const status = getInvoiceStatus(inv);
   const totals = computeInvoiceTotals(inv);
   const isPaid = status === 'paid';
   return `
     <tr data-id="${inv.id}" class="clickable">
+      <td class="col-checkbox" data-label=""><input type="checkbox" class="row-select" data-id="${inv.id}" ${selected ? 'checked' : ''} aria-label="Vybrať faktúru ${escapeHtml(inv.number)}"></td>
       <td data-label="Faktúra"><span class="cell-title">${escapeHtml(inv.number)}</span></td>
       <td data-label="Klient">
         <div>

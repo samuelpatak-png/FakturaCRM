@@ -82,9 +82,31 @@ const Store = {
     return updated;
   },
 
-  async deleteInvoice(id) {
-    await apiFetch(`/api/invoices/${id}`, { method: 'DELETE' });
+  // Odstráni faktúru len z lokálnej kópie (bez volania API) — používa sa pri "Undo" mazaní,
+  // kde sa faktúra z appky zmizne okamžite, ale na serveri sa zmaže až po uplynutí undo okna.
+  removeFromCache(id) {
+    const removed = _invoicesCache.find((inv) => inv.id === id) || null;
     _invoicesCache = _invoicesCache.filter((inv) => inv.id !== id);
+    return removed;
+  },
+
+  restoreToCache(invoice) {
+    if (!invoice || _invoicesCache.some((inv) => inv.id === invoice.id)) return;
+    _invoicesCache = [invoice, ..._invoicesCache];
+  },
+
+  async commitDeleteInvoice(id) {
+    await apiFetch(`/api/invoices/${id}`, { method: 'DELETE' });
+  },
+
+  async deleteInvoice(id) {
+    const removed = this.removeFromCache(id);
+    try {
+      await this.commitDeleteInvoice(id);
+    } catch (err) {
+      this.restoreToCache(removed);
+      throw err;
+    }
   },
 
   async setPaid(id, paid) {
@@ -144,7 +166,53 @@ const Store = {
     });
     await this.init();
   },
+
+  // Jednoduchý peňažný denník (len príjmová strana — appka nesleduje výdaje) pre účtovníčku, ako CSV.
+  exportPenaznyDennikCsv() {
+    const paid = this.getInvoices()
+      .filter((inv) => inv.paidAt)
+      .sort((a, b) => (a.paidAt || '').localeCompare(b.paidAt || ''));
+
+    const header = ['Dátum úhrady', 'Doklad č.', 'Odberateľ', 'Popis', 'Suma bez DPH (€)', 'DPH (€)', 'Suma s DPH (€)'];
+    const rows = paid.map((inv) => {
+      const totals = computeInvoiceTotals(inv);
+      const desc = (inv.items || []).map((it) => it.description).filter(Boolean).join('; ');
+      return [
+        formatDate(inv.paidAt),
+        inv.number || '',
+        (inv.client && inv.client.name) || '',
+        desc,
+        csvAmount(totals.subtotal),
+        csvAmount(totals.vatTotal),
+        csvAmount(totals.total),
+      ];
+    });
+
+    const sums = paid.reduce(
+      (acc, inv) => {
+        const t = computeInvoiceTotals(inv);
+        acc.subtotal += t.subtotal;
+        acc.vat += t.vatTotal;
+        acc.total += t.total;
+        return acc;
+      },
+      { subtotal: 0, vat: 0, total: 0 }
+    );
+    rows.push(['', '', '', 'Spolu', csvAmount(sums.subtotal), csvAmount(sums.vat), csvAmount(sums.total)]);
+
+    const lines = [header, ...rows].map((row) => row.map(csvEscape).join(';'));
+    return '﻿' + lines.join('\r\n'); // BOM, nech Excel správne zobrazí diakritiku
+  },
 };
+
+function csvAmount(n) {
+  return (Number(n) || 0).toFixed(2).replace('.', ',');
+}
+
+function csvEscape(value) {
+  const str = String(value == null ? '' : value);
+  return /[;"\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+}
 
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -312,4 +380,40 @@ function getTopClients(invoices, limit) {
   return Array.from(map.values())
     .sort((a, b) => b.sum - a.sum)
     .slice(0, limit);
+}
+
+// Klienti nie sú samostatná entita — odvodzujú sa zoskupením faktúr podľa mena klienta.
+// "info" (adresa, IČO...) sa berie z najnovšej faktúry s daným menom.
+function getClientOverview(invoices) {
+  const map = new Map();
+  invoices.forEach((inv) => {
+    const name = (inv.client && inv.client.name) || '';
+    if (!name) return;
+    const totals = computeInvoiceTotals(inv);
+    const status = getInvoiceStatus(inv);
+    const entry = map.get(name) || {
+      name,
+      count: 0,
+      paidSum: 0,
+      outstandingSum: 0,
+      lastDate: '',
+      info: inv.client,
+    };
+    entry.count += 1;
+    if (status === 'paid') entry.paidSum += totals.total;
+    else entry.outstandingSum += totals.total;
+    const invDate = inv.issueDate || '';
+    if (invDate >= entry.lastDate) {
+      entry.lastDate = invDate;
+      entry.info = inv.client;
+    }
+    map.set(name, entry);
+  });
+  return Array.from(map.values()).sort((a, b) => b.lastDate.localeCompare(a.lastDate));
+}
+
+function getClientInvoices(invoices, name) {
+  return invoices
+    .filter((inv) => (inv.client && inv.client.name) === name)
+    .sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || ''));
 }

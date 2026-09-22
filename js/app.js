@@ -26,6 +26,46 @@ const App = {
     setTimeout(remove, 4000);
   },
 
+  // Toast s možnosťou "Späť" — akcia (onCommit) sa naozaj vykoná až po uplynutí `delay`,
+  // pokým používateľ medzitým neklikne na Späť (onUndo). Používa sa pri mazaní faktúr.
+  toastUndo(message, { onUndo, onCommit, delay = 5000 } = {}) {
+    const root = document.getElementById('toastRoot');
+    const el = document.createElement('div');
+    el.className = 'toast toast-undoable';
+    el.setAttribute('role', 'status');
+
+    const text = document.createElement('span');
+    text.textContent = message;
+    const undoBtn = document.createElement('button');
+    undoBtn.type = 'button';
+    undoBtn.className = 'toast-undo-btn';
+    undoBtn.textContent = 'Späť';
+    el.appendChild(text);
+    el.appendChild(undoBtn);
+    root.appendChild(el);
+
+    let settled = false;
+    const timer = setTimeout(async () => {
+      if (settled) return;
+      settled = true;
+      el.remove();
+      try {
+        if (onCommit) await onCommit();
+      } catch (err) {
+        console.error(err);
+        App.toast('Akciu sa nepodarilo dokončiť. Skús to znova.', 'critical');
+      }
+    }, delay);
+
+    undoBtn.addEventListener('click', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      el.remove();
+      if (onUndo) onUndo();
+    });
+  },
+
   confirm({ title, message, confirmLabel, cancelLabel, danger }) {
     return new Promise((resolve) => {
       const modalRoot = document.getElementById('modalRoot');
@@ -73,6 +113,7 @@ function render() {
 
   let activeNavRoute = parts[0];
   if (parts[0] === 'invoice') activeNavRoute = parts[1] === 'new' ? 'invoice/new' : 'invoices';
+  if (parts[0] === 'client') activeNavRoute = 'clients';
   document.querySelectorAll('.nav-link').forEach((link) => {
     link.classList.toggle('active', link.dataset.route === activeNavRoute);
   });
@@ -81,13 +122,19 @@ function render() {
 
   switch (parts[0]) {
     case 'invoices':
-      Views.invoices(root);
+      Views.invoices(root, { status: parts[1] });
       break;
     case 'invoice':
       if (parts[1] === 'new') Views.invoiceForm(root, {});
       else if (parts[1] === 'edit') Views.invoiceForm(root, { id: parts[2] });
       else if (parts[1] === 'view') Views.invoiceView(root, { id: parts[2] });
       else Views.dashboard(root);
+      break;
+    case 'clients':
+      Views.clients(root);
+      break;
+    case 'client':
+      Views.clientDetail(root, { name: decodeURIComponent(parts[1] || '') });
       break;
     case 'statistics':
       Views.statistics(root);
