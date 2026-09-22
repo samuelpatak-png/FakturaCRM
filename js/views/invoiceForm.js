@@ -298,6 +298,12 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
       const rel = Store.getInvoice(relatedSelect.value);
       state.relatedInvoiceId = rel ? rel.id : '';
       state.relatedInvoiceNumber = rel ? rel.number : '';
+      if (rel && rel.client) {
+        state.client = Object.assign({}, state.client, rel.client);
+        Object.entries(clientFieldMap).forEach(([elId, key]) => {
+          root.querySelector('#' + elId).value = state.client[key] || '';
+        });
+      }
     });
   }
 
