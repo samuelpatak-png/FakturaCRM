@@ -2,16 +2,19 @@
 // GET /api/pay-by-square?iban=...&amount=...&vs=...&note=...&name=...
 //
 // Poznámka: "bysquare" balík exportuje encode/PaymentOptions/CurrencyCode z podcesty "bysquare/pay"
-// (nie z hlavného "bysquare"), vyžaduje platný IBAN (overuje sa kontrolný súčet, nielen formát)
-// a vyžaduje meno príjemcu (beneficiary.name) — overené lokálnym testom pred nasadením.
-const { encode, PaymentOptions, CurrencyCode } = require('bysquare/pay');
-const QRCode = require('qrcode');
+// (nie z hlavného "bysquare"), je to čisto ESM balík (načítava sa cez dynamický import(), nie require,
+// nech ho Vercel-ov bundler pre serverless funkcie spoľahlivo zabalí), vyžaduje platný IBAN
+// (overuje sa kontrolný súčet, nielen formát) a vyžaduje meno príjemcu (beneficiary.name) —
+// všetko overené lokálnym testom pred nasadením.
 
 module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'method_not_allowed' });
   }
+
+  const { encode, PaymentOptions, CurrencyCode } = await import('bysquare/pay');
+  const QRCode = (await import('qrcode')).default;
 
   const iban = String(req.query.iban || '').replace(/\s+/g, '').toUpperCase();
   const amount = Number(req.query.amount);
