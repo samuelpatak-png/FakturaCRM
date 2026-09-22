@@ -408,6 +408,7 @@ th.num-cell { text-align: right; }
   background: var(--color-surface-alt); border: 1px solid var(--color-border);
   border-radius: var(--radius-md); padding: 10px 16px; margin-bottom: 14px;
 }
+.bulk-bar[hidden] { display: none; }
 .bulk-bar #bulkCount { font-size: 14px; font-weight: 600; color: var(--color-fg); }
 th.col-checkbox, td.col-checkbox { width: 40px; padding-right: 0; }
 .col-checkbox input[type="checkbox"], .row-select { width: 18px; height: 18px; min-height: 0; accent-color: var(--color-primary); }
