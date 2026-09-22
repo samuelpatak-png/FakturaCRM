@@ -121,7 +121,7 @@ Views.settings = function renderSettings(root) {
       <div style="display:flex; flex-direction:column; gap:16px;">
         <div class="card card-pad">
           <div class="section-title" style="margin-bottom:6px;">Záloha dát</div>
-          <p class="cell-sub" style="margin-bottom:16px;">Dáta sú uložené len v tomto prehliadači. Zálohu si stiahni pravidelne, nech o faktúry neprídeš.</p>
+          <p class="cell-sub" style="margin-bottom:16px;">Dáta sú uložené v spoločnej databáze appky. Zálohu si aj tak stiahni pravidelne pre istotu.</p>
           <button class="btn btn-secondary" id="btnExport" style="width:100%; margin-bottom:10px;">${Icons.download} Stiahnuť zálohu (JSON)</button>
           <input type="file" id="importFile" accept="application/json" class="visually-hidden">
           <button class="btn btn-secondary" id="btnImport" style="width:100%;">${Icons.upload} Obnoviť zo zálohy</button>
@@ -129,7 +129,7 @@ Views.settings = function renderSettings(root) {
 
         <div class="card card-pad">
           <div class="section-title" style="margin-bottom:6px; color: var(--color-critical-text);">Nebezpečná zóna</div>
-          <p class="cell-sub" style="margin-bottom:16px;">Natrvalo vymaže všetky faktúry uložené v tomto prehliadači.</p>
+          <p class="cell-sub" style="margin-bottom:16px;">Natrvalo vymaže všetky faktúry z databázy appky.</p>
           <button class="btn btn-danger" id="btnWipe" style="width:100%;">${Icons.trash} Vymazať všetky faktúry</button>
         </div>
       </div>
@@ -141,8 +141,9 @@ Views.settings = function renderSettings(root) {
     root.querySelector('#s-defaultvat-wrap').style.display = e.target.checked ? '' : 'none';
   });
 
-  root.querySelector('#settingsForm').addEventListener('submit', (e) => {
+  root.querySelector('#settingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = root.querySelector('#settingsForm button[type="submit"]');
     const updated = {
       companyName: root.querySelector('#s-name').value.trim(),
       street: root.querySelector('#s-street').value.trim(),
@@ -164,8 +165,18 @@ Views.settings = function renderSettings(root) {
       footerNote: root.querySelector('#s-footer').value.trim(),
       theme: settings.theme,
     };
-    Store.saveSettings(updated);
-    App.toast('Nastavenia boli uložené', 'good');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Ukladám…';
+    try {
+      await Store.saveSettings(updated);
+      App.toast('Nastavenia boli uložené', 'good');
+    } catch (err) {
+      console.error(err);
+      App.toast('Nastavenia sa nepodarilo uložiť. Skús to znova.', 'critical');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `${Icons.checkCircle} Uložiť nastavenia`;
+    }
   });
 
   root.querySelector('#btnExport').addEventListener('click', () => {
@@ -198,7 +209,7 @@ Views.settings = function renderSettings(root) {
     if (!ok) return;
     try {
       const text = await file.text();
-      Store.importAll(text);
+      await Store.importAll(text);
       App.toast('Dáta boli obnovené zo zálohy', 'good');
       App.rerender();
     } catch (err) {
@@ -210,14 +221,18 @@ Views.settings = function renderSettings(root) {
   root.querySelector('#btnWipe').addEventListener('click', async () => {
     const ok = await App.confirm({
       title: 'Vymazať všetky faktúry?',
-      message: 'Všetky faktúry uložené v tomto prehliadači budú natrvalo odstránené. Nastavenia zostanú zachované.',
+      message: 'Všetky faktúry v databáze appky budú natrvalo odstránené. Nastavenia zostanú zachované.',
       confirmLabel: 'Vymazať všetko',
       danger: true,
     });
-    if (ok) {
-      Store.saveInvoices([]);
+    if (!ok) return;
+    try {
+      await Store.wipeInvoices();
       App.toast('Všetky faktúry boli vymazané');
       App.navigate('dashboard');
+    } catch (err) {
+      console.error(err);
+      App.toast('Faktúry sa nepodarilo vymazať. Skús to znova.', 'critical');
     }
   });
 };

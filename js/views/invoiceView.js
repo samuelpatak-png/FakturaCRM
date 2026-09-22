@@ -43,10 +43,15 @@ Views.invoiceView = function renderInvoiceView(root, params) {
 
   root.querySelector('#btnPrint').addEventListener('click', () => window.print());
 
-  root.querySelector('#btnTogglePaid').addEventListener('click', () => {
-    Store.setPaid(invoice.id, !isPaid);
-    App.toast(isPaid ? 'Faktúra označená ako nezaplatená' : 'Faktúra označená ako zaplatená', 'good');
-    App.rerender();
+  root.querySelector('#btnTogglePaid').addEventListener('click', async () => {
+    try {
+      await Store.setPaid(invoice.id, !isPaid);
+      App.toast(isPaid ? 'Faktúra označená ako nezaplatená' : 'Faktúra označená ako zaplatená', 'good');
+      App.rerender();
+    } catch (err) {
+      console.error(err);
+      App.toast('Zmenu sa nepodarilo uložiť. Skús to znova.', 'critical');
+    }
   });
 
   root.querySelector('#btnDelete').addEventListener('click', async () => {
@@ -57,9 +62,14 @@ Views.invoiceView = function renderInvoiceView(root, params) {
       danger: true,
     });
     if (ok) {
-      Store.deleteInvoice(invoice.id);
-      App.toast('Faktúra odstránená');
-      App.navigate('invoices');
+      try {
+        await Store.deleteInvoice(invoice.id);
+        App.toast('Faktúra odstránená');
+        App.navigate('invoices');
+      } catch (err) {
+        console.error(err);
+        App.toast('Faktúru sa nepodarilo odstrániť. Skús to znova.', 'critical');
+      }
     }
   });
 };

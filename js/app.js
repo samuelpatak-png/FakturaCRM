@@ -131,10 +131,13 @@ function effectiveTheme(settings) {
 }
 
 function applyTheme() {
-  const settings = Store.getSettings();
-  const effective = effectiveTheme(settings);
-  if (settings.theme === 'light' || settings.theme === 'dark') {
-    document.documentElement.setAttribute('data-theme', settings.theme);
+  applyThemeAttribute(Store.getSettings().theme);
+}
+
+function applyThemeAttribute(themeSetting) {
+  const effective = effectiveTheme({ theme: themeSetting });
+  if (themeSetting === 'light' || themeSetting === 'dark') {
+    document.documentElement.setAttribute('data-theme', themeSetting);
   } else {
     document.documentElement.removeAttribute('data-theme');
   }
@@ -151,12 +154,18 @@ function applyTheme() {
 }
 
 function initThemeToggle() {
-  document.getElementById('themeToggle').addEventListener('click', () => {
+  document.getElementById('themeToggle').addEventListener('click', async () => {
     const settings = Store.getSettings();
     const next = effectiveTheme(settings) === 'dark' ? 'light' : 'dark';
-    Store.saveSettings(Object.assign({}, settings, { theme: next }));
-    applyTheme();
+    applyThemeAttribute(next);
     render();
+    try {
+      await Store.saveSettings(Object.assign({}, settings, { theme: next }));
+    } catch (err) {
+      console.error(err);
+      App.toast('Motív sa nepodarilo uložiť, skús to znova neskôr.', 'critical');
+    }
+    applyTheme();
   });
 
   if (window.matchMedia) {
@@ -169,7 +178,31 @@ function initThemeToggle() {
 
 // ---- Štart appky --------------------------------------------------------
 
-applyTheme();
-initSidebar();
-initThemeToggle();
-render();
+async function boot() {
+  applyThemeAttribute('system'); // predbežný motív, kým sa nenačítajú uložené nastavenia
+  initSidebar();
+  initThemeToggle();
+
+  const root = document.getElementById('viewRoot');
+  root.innerHTML = `<div class="empty-state" style="padding-top:120px;">${Icons.clock}<h3>Načítavam dáta…</h3></div>`;
+
+  try {
+    await Store.init();
+  } catch (err) {
+    console.error(err);
+    root.innerHTML = `
+      <div class="empty-state" style="padding-top:120px;">
+        ${Icons.alertTriangle}
+        <h3>Dáta sa nepodarilo načítať</h3>
+        <p>Skontroluj internetové pripojenie a skús to znova.</p>
+        <button class="btn btn-primary" id="retryBoot">Skúsiť znova</button>
+      </div>`;
+    document.getElementById('retryBoot').addEventListener('click', boot);
+    return;
+  }
+
+  applyTheme();
+  render();
+}
+
+boot();

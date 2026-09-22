@@ -287,7 +287,7 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
   root.querySelector('#f-note').addEventListener('input', (e) => { state.note = e.target.value; });
 
   // -- Odoslanie --
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const errors = validateInvoice(state);
     clearFormErrors(root);
@@ -310,16 +310,27 @@ Views.invoiceForm = function renderInvoiceForm(root, params) {
         vatRate: Number(it.vatRate) || 0,
       }));
 
-    let saved;
-    if (existing) {
-      saved = Store.updateInvoice(existing.id, state);
-      App.toast('Faktúra bola aktualizovaná', 'good');
-    } else {
-      const { id, ...data } = state;
-      saved = Store.createInvoice(data);
-      App.toast('Faktúra bola vytvorená', 'good');
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Ukladám…';
+
+    try {
+      let saved;
+      if (existing) {
+        saved = await Store.updateInvoice(existing.id, state);
+        App.toast('Faktúra bola aktualizovaná', 'good');
+      } else {
+        const { id, ...data } = state;
+        saved = await Store.createInvoice(data);
+        App.toast('Faktúra bola vytvorená', 'good');
+      }
+      App.navigate(`invoice/view/${saved.id}`);
+    } catch (err) {
+      console.error(err);
+      App.toast('Faktúru sa nepodarilo uložiť. Skús to znova.', 'critical');
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `${Icons.checkCircle} Uložiť faktúru`;
     }
-    App.navigate(`invoice/view/${saved.id}`);
   });
 };
 

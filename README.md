@@ -15,32 +15,32 @@ Appka **nezapočítava výdavky** — sleduje výhradne príjmy z vystavených f
 
 ## Technológie
 
-Čisté HTML/CSS/JavaScript bez buildovacieho procesu — žiadny Node.js, žiadna inštalácia závislostí. Grafy cez [Chart.js](https://www.chartjs.org/) (načítaný z CDN).
+Frontend je čisté HTML/CSS/JavaScript bez buildovacieho procesu. Backend sú Vercel serverless funkcie (Node.js) v `/api`, ktoré čítajú a zapisujú do Postgres databázy (Vercel Storage / Neon). Grafy cez [Chart.js](https://www.chartjs.org/) (načítaný z CDN).
 
 ## Ukladanie dát
 
-Všetky dáta (faktúry, nastavenia) sa ukladajú **lokálne v prehliadači** (`localStorage`) — appka nemá backend ani databázu. To znamená:
+Faktúry a nastavenia sa ukladajú v **spoločnej Postgres databáze** pripojenej k projektu vo Vercel — appka je teda dostupná a rovnaká z akéhokoľvek zariadenia/prehliadača, nie je viazaná na jeden localStorage.
 
-- Dáta ostávajú len v prehliadači a zariadení, na ktorom ich appku používaš.
-- Vyčistenie histórie/dát prehliadača dáta zmaže.
-- V **Nastaveniach → Záloha dát** si vieš kedykoľvek stiahnuť zálohu (JSON) a neskôr ju obnoviť — odporúča sa robiť pravidelne.
+⚠️ **Appka nemá prihlásenie** — kto pozná adresu appky, má plný prístup (čítanie aj úpravy/mazanie faktúr). V **Nastaveniach → Záloha dát** si aj tak vieš kedykoľvek stiahnuť zálohu (JSON) a neskôr ju obnoviť.
 
 ## Spustenie
 
-Appka je statická — stačí otvoriť `index.html` v prehliadači, alebo spustiť jednoduchý lokálny server:
+Appka potrebuje bežiace API funkcie a pripojenie na databázu, takže sa spúšťa cez Vercel (samotné `index.html` lokálne nestačí, keďže appka volá `/api/*`):
 
 ```bash
-python3 -m http.server 8000
+npm i -g vercel
+vercel dev
 ```
 
-a otvoriť `http://localhost:8000`.
+Vercel CLI si pri prvom spustení vypýta prepojenie na existujúci projekt `fakturacrm` a stiahne potrebné premenné prostredia (pripojenie na databázu).
 
 ## Štruktúra projektu
 
 ```
 index.html          — kostra appky (sidebar, kontajner pre obrazovky)
 css/style.css        — dizajnové tokeny, layout, komponenty, tlačová šablóna
-js/storage.js        — dátová vrstva (localStorage), výpočty nad faktúrami
+api/                  — Vercel serverless funkcie (Node.js) — /api/invoices, /api/invoices/[id], /api/settings
+js/storage.js        — dátová vrstva appky, volá /api/* a drží lokálnu kópiu pre synchrónne čítanie
 js/charts.js          — Chart.js grafy (mesačné príjmy, stav faktúr)
 js/icons.js            — zdieľané SVG ikony
 js/utils.js             — zdieľané UI pomôcky

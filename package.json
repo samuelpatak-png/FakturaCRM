@@ -1,0 +1,9 @@
+{
+  "name": "fakturacrm",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Jednoduchá appka na vystavovanie faktúr a sledovanie príjmov.",
+  "dependencies": {
+    "@vercel/postgres": "^0.10.0"
+  }
+}

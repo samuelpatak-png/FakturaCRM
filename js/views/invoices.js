@@ -109,14 +109,19 @@ Views.invoices = function renderInvoices(root) {
     });
 
     el.querySelectorAll('[data-action="toggle-paid"]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = btn.dataset.id;
         const inv = Store.getInvoice(id);
         const isPaid = getInvoiceStatus(inv) === 'paid';
-        Store.setPaid(id, !isPaid);
-        App.toast(isPaid ? 'Faktúra označená ako nezaplatená' : 'Faktúra označená ako zaplatená', 'good');
-        applyFilters();
+        try {
+          await Store.setPaid(id, !isPaid);
+          App.toast(isPaid ? 'Faktúra označená ako nezaplatená' : 'Faktúra označená ako zaplatená', 'good');
+          applyFilters();
+        } catch (err) {
+          console.error(err);
+          App.toast('Zmenu sa nepodarilo uložiť. Skús to znova.', 'critical');
+        }
       });
     });
 
@@ -139,9 +144,14 @@ Views.invoices = function renderInvoices(root) {
           danger: true,
         });
         if (ok) {
-          Store.deleteInvoice(id);
-          App.toast('Faktúra odstránená');
-          applyFilters();
+          try {
+            await Store.deleteInvoice(id);
+            App.toast('Faktúra odstránená');
+            applyFilters();
+          } catch (err) {
+            console.error(err);
+            App.toast('Faktúru sa nepodarilo odstrániť. Skús to znova.', 'critical');
+          }
         }
       });
     });

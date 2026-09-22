@@ -1,10 +1,8 @@
-// Dátová vrstva appky — všetko sa ukladá do localStorage prehliadača.
+// Dátová vrstva appky — faktúry a nastavenia žijú v spoločnej Postgres databáze (cez /api/*).
+// Čítania (getInvoices/getSettings/...) sú synchrónne a čítajú z lokálnej pamäťovej kópie,
+// ktorá sa naplní pri štarte (Store.init) a drží sa v sync po každej úspešnej zápisovej operácii —
+// vďaka tomu väčšina obrazoviek (dashboard, faktúry, štatistiky) nemusí vôbec riešiť asynchronicitu.
 'use strict';
-
-const STORAGE_KEYS = {
-  invoices: 'fakturacrm.invoices.v1',
-  settings: 'fakturacrm.settings.v1',
-};
 
 const DEFAULT_SETTINGS = {
   companyName: '',
@@ -28,98 +26,82 @@ const DEFAULT_SETTINGS = {
   theme: 'system',
 };
 
-function uid() {
-  return (crypto.randomUUID && crypto.randomUUID()) ||
-    'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
-}
+let _invoicesCache = [];
+let _settingsCache = Object.assign({}, DEFAULT_SETTINGS);
 
-function readJSON(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return parsed == null ? fallback : parsed;
-  } catch (err) {
-    console.error('Chyba pri čítaní z localStorage:', key, err);
-    return fallback;
+async function apiFetch(url, options) {
+  const res = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, options));
+  let body = null;
+  try { body = await res.json(); } catch (err) { /* prázdna odpoveď */ }
+  if (!res.ok) {
+    throw new Error((body && (body.message || body.error)) || `Chyba servera (${res.status})`);
   }
-}
-
-function writeJSON(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (err) {
-    console.error('Chyba pri zápise do localStorage:', key, err);
-    return false;
-  }
+  return body;
 }
 
 const Store = {
-  getSettings() {
-    return Object.assign({}, DEFAULT_SETTINGS, readJSON(STORAGE_KEYS.settings, {}));
+  async init() {
+    const [invoices, settings] = await Promise.all([
+      apiFetch('/api/invoices'),
+      apiFetch('/api/settings'),
+    ]);
+    _invoicesCache = invoices || [];
+    _settingsCache = Object.assign({}, DEFAULT_SETTINGS, settings || {});
   },
 
-  saveSettings(settings) {
-    writeJSON(STORAGE_KEYS.settings, settings);
-    return settings;
+  getSettings() {
+    return _settingsCache;
+  },
+
+  async saveSettings(settings) {
+    const saved = await apiFetch('/api/settings', { method: 'PUT', body: JSON.stringify(settings) });
+    _settingsCache = Object.assign({}, DEFAULT_SETTINGS, saved);
+    return _settingsCache;
   },
 
   getInvoices() {
-    return readJSON(STORAGE_KEYS.invoices, []);
-  },
-
-  saveInvoices(list) {
-    writeJSON(STORAGE_KEYS.invoices, list);
-    return list;
+    return _invoicesCache;
   },
 
   getInvoice(id) {
-    return this.getInvoices().find((inv) => inv.id === id) || null;
+    return _invoicesCache.find((inv) => inv.id === id) || null;
   },
 
-  createInvoice(data) {
-    const list = this.getInvoices();
-    const invoice = Object.assign(
-      {
-        id: uid(),
-        createdAt: new Date().toISOString(),
-        paidAt: null,
-      },
-      data
-    );
-    list.push(invoice);
-    this.saveInvoices(list);
-    return invoice;
+  async createInvoice(data) {
+    const created = await apiFetch('/api/invoices', { method: 'POST', body: JSON.stringify(data) });
+    _invoicesCache = [created, ..._invoicesCache];
+    return created;
   },
 
-  updateInvoice(id, data) {
-    const list = this.getInvoices();
-    const idx = list.findIndex((inv) => inv.id === id);
+  async updateInvoice(id, data) {
+    const idx = _invoicesCache.findIndex((inv) => inv.id === id);
     if (idx === -1) return null;
-    list[idx] = Object.assign({}, list[idx], data);
-    this.saveInvoices(list);
-    return list[idx];
+    const merged = Object.assign({}, _invoicesCache[idx], data);
+    const updated = await apiFetch(`/api/invoices/${id}`, { method: 'PUT', body: JSON.stringify(merged) });
+    _invoicesCache = _invoicesCache.map((inv) => (inv.id === id ? updated : inv));
+    return updated;
   },
 
-  deleteInvoice(id) {
-    const list = this.getInvoices().filter((inv) => inv.id !== id);
-    this.saveInvoices(list);
+  async deleteInvoice(id) {
+    await apiFetch(`/api/invoices/${id}`, { method: 'DELETE' });
+    _invoicesCache = _invoicesCache.filter((inv) => inv.id !== id);
   },
 
-  setPaid(id, paid) {
-    return this.updateInvoice(id, {
-      paidAt: paid ? new Date().toISOString().slice(0, 10) : null,
-    });
+  async setPaid(id, paid) {
+    return this.updateInvoice(id, { paidAt: paid ? todayISO() : null });
+  },
+
+  async wipeInvoices() {
+    await apiFetch('/api/invoices', { method: 'DELETE' });
+    _invoicesCache = [];
   },
 
   nextInvoiceNumber(settings) {
     const year = new Date().getFullYear();
     const prefix = (settings.invoicePrefix || 'FA').trim() || 'FA';
-    const list = this.getInvoices();
     const pattern = new RegExp('^' + escapeRegex(prefix) + '-' + year + '-(\\d+)$');
     let max = 0;
-    list.forEach((inv) => {
+    this.getInvoices().forEach((inv) => {
       const m = pattern.exec(inv.number || '');
       if (m) max = Math.max(max, parseInt(m[1], 10));
     });
@@ -128,9 +110,8 @@ const Store = {
   },
 
   getClientSuggestions() {
-    const list = this.getInvoices();
     const seen = new Map();
-    list.forEach((inv) => {
+    this.getInvoices().forEach((inv) => {
       if (inv.client && inv.client.name && !seen.has(inv.client.name)) {
         seen.set(inv.client.name, inv.client);
       }
@@ -152,13 +133,16 @@ const Store = {
     );
   },
 
-  importAll(jsonString) {
+  async importAll(jsonString) {
     const data = JSON.parse(jsonString);
     if (!data || !Array.isArray(data.invoices)) {
       throw new Error('Neplatný formát súboru zálohy.');
     }
-    if (data.settings) this.saveSettings(Object.assign({}, DEFAULT_SETTINGS, data.settings));
-    this.saveInvoices(data.invoices);
+    await apiFetch('/api/invoices/import', {
+      method: 'POST',
+      body: JSON.stringify({ invoices: data.invoices, settings: data.settings || null }),
+    });
+    await this.init();
   },
 };
 
