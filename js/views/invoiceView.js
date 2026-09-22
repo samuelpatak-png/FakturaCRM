@@ -2,9 +2,9 @@
 'use strict';
 
 const DOC_VIEW_META = {
-  invoice: { docLabel: 'Faktúra', printTitle: 'FAKTÚRA' },
-  quote: { docLabel: 'Cenová ponuka', printTitle: 'CENOVÁ PONUKA' },
-  credit_note: { docLabel: 'Dobropis', printTitle: 'DOBROPIS' },
+  invoice: { docLabel: 'Faktúra', docLabelAcc: 'faktúru', printTitle: 'FAKTÚRA' },
+  quote: { docLabel: 'Cenová ponuka', docLabelAcc: 'cenovú ponuku', printTitle: 'CENOVÁ PONUKA' },
+  credit_note: { docLabel: 'Dobropis', docLabelAcc: 'dobropis', printTitle: 'DOBROPIS' },
 };
 
 Views.invoiceView = function renderInvoiceView(root, params) {
@@ -394,7 +394,7 @@ function buildInvoiceEmailMailto(invoice, settings) {
   const lines = [
     'Dobrý deň,',
     '',
-    `posielam ${meta.docLabel.toLowerCase()} č. ${invoice.number}` +
+    `posielam ${meta.docLabelAcc} č. ${invoice.number}` +
       (docType === 'invoice' ? ` so splatnosťou ${formatDate(invoice.dueDate)}.` : docType === 'quote' ? ` platnú do ${formatDate(invoice.validUntil)}.` : '.'),
     '',
     ...itemLines,
