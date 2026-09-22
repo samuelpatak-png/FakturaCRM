@@ -170,6 +170,11 @@ function initSidebar() {
     menuBtn.setAttribute('aria-expanded', String(willOpen));
   });
   backdrop.addEventListener('click', closeSidebar);
+  // Klik na odkaz na AKTUÁLNU stránku nevyvolá hashchange, takže by inak nechal
+  // mobilné menu otvorené — zavrieme ho vždy priamo pri kliku na akýkoľvek odkaz.
+  sidebar.querySelectorAll('.nav-link').forEach((link) => {
+    link.addEventListener('click', closeSidebar);
+  });
 }
 
 // ---- Motív (svetlý / tmavý) --------------------------------------------
