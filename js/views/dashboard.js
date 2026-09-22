@@ -6,7 +6,7 @@ Views.dashboard = function renderDashboard(root) {
   const settings = Store.getSettings();
   const agg = getStatusAggregates(invoices);
 
-  const totalPaid = agg.paid.sum;
+  const totalPaid = getTotalPaid(invoices);
   const now = new Date();
   const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -156,11 +156,12 @@ Views.dashboard = function renderDashboard(root) {
     monthlyChartWrap.innerHTML = chartEmptyHtml('Zatiaľ žiadne zaplatené faktúry');
   }
 
+  // Súčty faktúr namiesto platieb — inak by "čiastočne prijatá" časť čiastočných platieb
+  // nebola vidno v žiadnom segmente (agg.partial.sum je len nedoplatok, nie prijatá časť).
   const donutCanvas = document.getElementById('statusDonut');
   const donutSegments = [
-    { label: 'Zaplatené', value: agg.paid.sum, color: cssVar('--color-good') },
-    { label: 'Čiastočne', value: agg.partial.sum, color: cssVar('--color-info') },
-    { label: 'Nezaplatené', value: agg.unpaid.sum, color: cssVar('--color-warning') },
+    { label: 'Prijaté', value: totalPaid, color: cssVar('--color-good') },
+    { label: 'Neuhradené', value: agg.unpaid.sum + agg.partial.sum, color: cssVar('--color-warning') },
     { label: 'Po splatnosti', value: agg.overdue.sum, color: cssVar('--color-critical') },
   ].filter((s) => s.value > 0);
 

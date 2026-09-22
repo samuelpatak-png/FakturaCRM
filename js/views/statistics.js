@@ -26,6 +26,7 @@ Views.statistics = function renderStatistics(root) {
 
   const uniqueClients = new Set(invoices.map((inv) => (inv.client && inv.client.name) || '').filter(Boolean)).size;
   const topClients = getTopClients(allInvoices, 8);
+  const totalPaid = getTotalPaid(allInvoices);
 
   root.innerHTML = `
     <div class="page-header">
@@ -105,9 +106,8 @@ Views.statistics = function renderStatistics(root) {
 
   const donutCanvas = document.getElementById('statsDonut');
   const donutSegments = [
-    { label: 'Zaplatené', value: agg.paid.sum, color: cssVar('--color-good') },
-    { label: 'Čiastočne', value: agg.partial.sum, color: cssVar('--color-info') },
-    { label: 'Nezaplatené', value: agg.unpaid.sum, color: cssVar('--color-warning') },
+    { label: 'Prijaté', value: totalPaid, color: cssVar('--color-good') },
+    { label: 'Neuhradené', value: agg.unpaid.sum + agg.partial.sum, color: cssVar('--color-warning') },
     { label: 'Po splatnosti', value: agg.overdue.sum, color: cssVar('--color-critical') },
   ].filter((s) => s.value > 0);
 

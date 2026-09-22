@@ -446,6 +446,17 @@ function sumPaidBetween(invoices, fromISO, toISO) {
   return sum;
 }
 
+// Celkový skutočne prijatý príjem — súčet VŠETKÝCH platieb (aj čiastočných), nielen z
+// faktúr v stave "zaplatená". Toto je "Celkové príjmy" na dashboarde.
+function getTotalPaid(invoices) {
+  let sum = 0;
+  invoices.forEach((inv) => {
+    if (!isRealInvoice(inv)) return;
+    sum += getAmountPaid(inv);
+  });
+  return sum;
+}
+
 function getTopClients(invoices, limit) {
   const map = new Map();
   invoices.forEach((inv) => {

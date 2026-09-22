@@ -111,7 +111,7 @@ Views.clientDetail = function renderClientDetail(root, params) {
         </div>
         <div class="stat-tile">
           <div class="stat-tile-head"><span class="stat-label">Zaplatené</span><span class="stat-icon good">${Icons.euro}</span></div>
-          <span class="stat-value">${formatCurrency(agg.paid.sum)}</span>
+          <span class="stat-value">${formatCurrency(getTotalPaid(invoices))}</span>
         </div>
         <div class="stat-tile">
           <div class="stat-tile-head"><span class="stat-label">Neuhradené</span><span class="stat-icon warning">${Icons.clock}</span></div>
